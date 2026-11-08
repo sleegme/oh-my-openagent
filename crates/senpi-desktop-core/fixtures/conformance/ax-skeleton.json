@@ -41,7 +41,7 @@
                 "screenLocked": false,
                 "displayAsleep": false
               },
-              "resumeToken": "01M6NEX8KWBNB6VQPZAQSZ71F701M6NEX8KWBC4K4AW57TSE7XKJ"
+              "resumeToken": "per-process-random"
             }
           },
           "variable": [
