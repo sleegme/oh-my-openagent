@@ -131,7 +131,7 @@ export function createThreadSdk(options: ThreadSdkOptions): ThreadSdk {
   const workspaces = options.provenanceWorkspaces
   const surface: ThreadToolSurfaceOptions = { host, store, env, ...(workspaces === undefined ? {} : { loadProvenanceWorkspaces: () => workspaces }), stateDirectory: options.agentDir, sessionsDirectory: () => join(options.agentDir, "sessions"), callerSessionId: () => UNKNOWN_CALLER, callerWorkspaceRoot: () => options.cwd, now }
   const view = () => hostView(surface)
-  const { engine, relay, endpoints, locate } = createGatewayServices(surface, () => hostView(surface, { offline: true }))
+  const { engine, relay, endpoints, locate, pipeline } = createGatewayServices(surface, () => hostView(surface, { offline: true }))
   // An extension call resolves its target while the store worker runs that call's transaction, so it
   // takes the store-free live-and-disk resolver: the send path's `resolve` first asks this same store
   // for the session's owner, a request the busy worker would only answer after the call's budget.
@@ -205,13 +205,27 @@ export function createThreadSdk(options: ThreadSdkOptions): ThreadSdk {
       if (request.binding_id !== undefined) return await inbound({ ...request, binding_id: request.binding_id })
       if (request.thread === undefined) return fail("invalid_arguments", "A send without a binding needs a target session.", "Pass the target session, or --binding to deliver through a binding.")
       if (request.author !== undefined) return fail("invalid_arguments", "An author names a human in a bound external thread; a send without a binding has none.", "Pass binding_id with the author, or drop the author.")
+      const sender = { kind: "cli", uid: options.uid, user: options.user } as const
+      let address = request.thread
+      let scope = request.all_scope
+      if (options.remote !== undefined) {
+        const target = await crossTarget(options.remote, request.thread, resolution(surface, resolveEntries(surface, await view()), request.thread, UNKNOWN_CALLER, true))
+        if (target.kind === "error") return target.result.kind === "error" ? { kind: "error", error: target.result.error } : fail("internal_error", "The send target could not be resolved.", "Call thread_list and retry.")
+        // The one pipeline decides a session on another device, and refuses a command-line sender there (todo 8).
+        if (target.kind === "remote") {
+          const outcome = await pipeline.deliver({ sender, caller_id: UNKNOWN_CALLER, target: { kind: "remote", row: target.row }, text: request.text, mode: request.mode ?? "auto", idempotency_key: request.idempotency_key ?? "sdk-cli", args: request })
+          return outcome.kind === "error" ? outcome : fail("internal_error", "A command-line send to another device was not refused.", "Use omo remote send <device>/<session>.")
+        }
+        address = target.address
+        scope = localScope(target, request.all_scope)
+      }
       return await engine.deliver({
-        sender: { kind: "cli", uid: options.uid, user: options.user },
-        target: request.thread,
+        sender,
+        target: address,
         text: request.text,
         ...(request.mode === undefined ? {} : { mode: request.mode }),
         ...(request.expected_turn_id === undefined ? {} : { expected_turn_id: request.expected_turn_id }),
-        ...(request.all_scope === undefined ? {} : { all_scope: request.all_scope }),
+        ...(scope === undefined ? {} : { all_scope: scope }),
         ...(request.idempotency_key === undefined ? {} : { idempotency_key: request.idempotency_key }),
       })
     }),
