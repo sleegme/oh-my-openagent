@@ -10,6 +10,7 @@ import { gatewayDatabasePath, gatewayInboxDirectory, gatewayRootDirectory } from
 import { createGatewayStore, type GatewayStore } from "./gateway/store"
 import { resumeProcess, suspendProcess } from "./gateway/testing/job-control"
 import type { ThreadHost } from "./tools"
+import { createRemoteThreadFixture } from "./thread-remote-fixture"
 
 function host(): ThreadHost {
   return {
@@ -614,5 +615,29 @@ describe("thread component production registration", () => {
     const f = api()
     createThreadComponent({ host: host(), stateDirectory: "/tmp/thread-test-state" }).register(f.pi as never, context([]) as never)
     expect(f.tools).toHaveLength(18)
+  })
+})
+
+describe("a run woken from another device continues that chain in its next send (K8, #12879 todo 7)", () => {
+  const fixture = createRemoteThreadFixture()
+
+  test("#given an admitted delivery from another device naming chain_count 2 #when the run sends to b #then the admission carries hop 3 and no local cause is claimed", async () => {
+    const agentDir = mkdtempSync(join(tmpdir(), "thr-component-chain-"))
+    const store = createGatewayStore({ agentDir })
+    try {
+      const relay = fixture.account()
+      const f = eventApi()
+      createThreadComponent({ host: host(), stateDirectory: join(agentDir, "state"), agentDir: () => agentDir, store, remote: relay.remote }).register(f.pi as never, { logger: { warn: () => {} }, cwd: process.cwd() } as never)
+      await f.dispatch("agent_start", sessionCtx("dur-caller"))
+      await f.dispatch("message_start", sessionCtx("dur-caller"), { message: { role: "custom", customType: "session_control_delivery", content: "from b", details: { delivery_id: "device:dev-b/d-1", chain_count: 2, remote_origin: { deviceId: "dev-b" } } } })
+      const sent = await f.tool("thread_send").execute("call-send", { thread: "dur-on-b", message: "next" }, undefined, undefined, sessionCtx("dur-caller"))
+      expect(JSON.stringify(sent)).not.toContain("unknown_cause")
+      const admitted = relay.sent.find((entry) => entry.rpc?.["type"] === "admit_external_message")?.rpc ?? {}
+      expect(admitted["chainCount"]).toBe(3)
+    } finally {
+      await store.dispose()
+      rmSync(agentDir, { recursive: true, force: true })
+      await fixture.cleanup()
+    }
   })
 })

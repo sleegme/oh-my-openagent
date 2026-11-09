@@ -459,3 +459,31 @@ describe("held_draft_quiescence", () => {
     expect({ state: (await b.store.deliveryView(id))?.row.state, marker: existsSync(marker), entries: b.runtime.transcriptEntries(id) }).toEqual({ state: "applied", marker: false, entries: 1 })
   })
 })
+
+// K8 across devices (#12879 todo 7): a run woken by a delivery from another device continues that chain on its next
+// same-device send, from the engine-stamped chain_count the caller passes as inbound_hop; it never reads the text.
+describe("an inbound hop from another device continues the chain on a same-device send", () => {
+  test("#given no cause and inbound_hop 2 #when A sends #then the row is hop 3 on a fresh root", async () => {
+    const h = open()
+    h.session("A")
+    h.session("B")
+    const id = okId(await send(h, "A", "B", "next", { inbound_hop: 2 }))
+    const row = (await h.get("A").store.deliveryView(id))?.row
+    expect(row?.hop).toBe(3)
+    expect(row?.root_id.startsWith("root-")).toBe(true)
+  })
+
+  test("#given a cause at hop 1 and inbound_hop 4 #when A sends on #then the row is hop 5 on the cause's root", async () => {
+    const h = open()
+    h.session("A")
+    h.session("B")
+    h.session("C")
+    const first = okId(await send(h, "B", "A", "start"))
+    const cause = (await h.get("B").store.deliveryView(first))?.row
+    expect(cause?.hop).toBe(1)
+    const id = okId(await send(h, "A", "C", "onward", { cause_delivery_id: first, inbound_hop: 4 }))
+    const row = (await h.get("A").store.deliveryView(id))?.row
+    expect(row?.hop).toBe(5)
+    expect(row?.root_id).toBe(cause?.root_id)
+  })
+})
