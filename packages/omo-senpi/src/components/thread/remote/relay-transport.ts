@@ -10,7 +10,7 @@ import type { GatewayStore } from "../gateway/store"
 import type { DeliveryOutcome, DeliveryTransport, OutboundDelivery } from "../gateway/transport"
 import type { Provenance } from "../gateway/types"
 import { UNKNOWN_CALLER } from "../tools/ports"
-import { deviceOnline, outcomeFailure } from "./lazy-ops"
+import { deviceOnline, outcomeFailure } from "./remote-ops"
 import type { JsonObject, RemoteCommandOutcome, RemoteSessionRow, RemoteThreadSurface } from "./ports"
 
 export type RelayTransportOptions = {

@@ -2,7 +2,6 @@ import type * as CrossDevice from "./cross-device"
 import type * as RemoteOps from "./remote-ops"
 import type * as RemoteControls from "./remote-controls"
 import type * as RelayTransport from "./relay-transport"
-import type { DeliveryTransport } from "../gateway/transport"
 
 type Runtime = Pick<typeof CrossDevice, "crossTarget" | "listAcross" | "planCreate" | "renameAlias" | "withAlias"> & Pick<typeof RemoteOps, "closeRemote" | "deviceOnline" | "interruptRemote" | "outcomeFailure" | "promptRemote" | "readRemote"> & Pick<typeof RemoteControls, "setModelRemote"> & Pick<typeof RelayTransport, "createRelayTransport">
 
@@ -24,9 +23,11 @@ export const setModelRemote = async (...args: Parameters<Runtime["setModelRemote
 export const readRemote = async (...args: Parameters<Runtime["readRemote"]>) => await (await runtime()).readRemote(...args)
 
 /** The relay transport lives in the sidecar too; it is built once per composition, on the first delivery, and keeps its state. */
-export const createRelayTransport = (options: Parameters<Runtime["createRelayTransport"]>[0]): DeliveryTransport => {
-  let built: Promise<DeliveryTransport> | undefined
+export const createRelayTransport = (options: Parameters<Runtime["createRelayTransport"]>[0]): RelayTransport.RelayTransport => {
+  let built: Promise<RelayTransport.RelayTransport> | undefined
   return {
+    // Clears a loaded instance's held-delivery retries at shutdown; a transport never used has none.
+    dispose: () => { void built?.then((transport) => transport.dispose(), () => undefined) },
     deliver: async (delivery) => {
       // Only a failed sidecar load is retried; a delivery that throws keeps the instance and its receipt notes.
       built ??= runtime().then((loaded) => loaded.createRelayTransport(options)).catch((error: unknown) => { built = undefined; throw error })
