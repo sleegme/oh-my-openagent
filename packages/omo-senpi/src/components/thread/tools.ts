@@ -373,6 +373,7 @@ async function deliverThrough(
     mode: value.delivery ?? "auto",
     ...(value.expected_turn_id === undefined ? {} : { expected_turn_id: value.expected_turn_id }),
     idempotency_key: idempotencyKey,
+    ...(options.callerChainHop === undefined ? {} : { inbound_hop: options.callerChainHop() }),
     args: value,
   })
   if (sent.kind === "error") return { kind: "error", error: sent.error }

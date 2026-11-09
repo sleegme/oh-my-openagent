@@ -35,6 +35,8 @@ export type GatewayDeliverRequest = {
   readonly all_scope?: boolean
   readonly idempotency_key?: string
   readonly root_id?: string
+  /** The chain hop the sender's run continues from another device (`EnqueueRequest.inbound_hop`). */
+  readonly inbound_hop?: number
 }
 
 export type GatewayEngine = {
@@ -128,6 +130,7 @@ export function createGatewayEngine(options: GatewayEngineOptions): GatewayEngin
       sender_node: facts.node,
       sender_turn: facts.turn,
       cause_delivery_id: facts.cause,
+      ...(request.inbound_hop === undefined || request.inbound_hop < 1 ? {} : { inbound_hop: request.inbound_hop }),
       claimed_root_id: request.root_id ?? null,
       origin: facts.origin(deliveryId),
       actor: facts.actor,

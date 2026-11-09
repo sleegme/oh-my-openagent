@@ -67,7 +67,7 @@ export type ThreadComponentOptions = Partial<Omit<ThreadToolSurfaceOptions, "cal
  * only one it goes there. Never a misroute: an input the session cannot attribute makes an implicit
  * report refuse when several bindings exist.
  */
-type RunContext = { turn: number; cause: string | undefined; consumed: string[]; local: boolean; answered: boolean }
+type RunContext = { turn: number; cause: string | undefined; consumed: string[]; local: boolean; answered: boolean; chainHop: number }
 
 type EngineMessage = { readonly role?: unknown; readonly customType?: unknown; readonly details?: unknown; readonly content?: unknown }
 
@@ -93,11 +93,17 @@ function noteInput(run: RunContext, message: EngineMessage): void {
     run.consumed = []
     run.local = false
     run.answered = false
+    run.chainHop = 0
   }
   if (message.role === "user") run.local = true
   const deliveryId = deliveryIdOf(message)
   if (deliveryId === undefined) return
-  run.cause = deliveryId
+  // The engine stamps a delivery's chain (`chain_count`) and, for one admitted from another device, its origin. That
+  // delivery has no row in this device's store, so it is no local cause; its hop still continues in the run's next send.
+  const details = message.details as { readonly chain_count?: unknown; readonly remote_origin?: unknown } | null | undefined
+  const count = details?.chain_count
+  if (typeof count === "number" && Number.isSafeInteger(count) && count >= 1) run.chainHop = Math.max(run.chainHop, count)
+  if (details?.remote_origin === undefined) run.cause = deliveryId
   if (!run.consumed.includes(deliveryId)) run.consumed.push(deliveryId)
 }
 
@@ -211,7 +217,7 @@ export function createThreadComponent(options: ThreadComponentOptions = {}): Omo
         }
         if (event.kind === "legacy_mailbox_skipped") ctx.logger.warn(`thread gateway: ${event.items.length} legacy thread mailbox item(s) in ${event.directory} name no session id and were not imported: ${event.items.map((item) => `#${item.message_seq} -> ${JSON.stringify(item.target)}`).join(", ")}`)
       })
-      const run: RunContext = { turn: 0, cause: undefined, consumed: [], local: false, answered: true }
+      const run: RunContext = { turn: 0, cause: undefined, consumed: [], local: false, answered: true, chainHop: 0 }
       const completions = createCompletionTracker((durableId, outcome, throughArmSeq) => store.emitCompletions({ now: store.now(), session_durable_id: durableId, outcome, through_arm_seq: throughArmSeq }), {
         retryAfterMs: () => store.busyTimeoutMs,
         onWriteFailed: (error, retrying) =>
@@ -234,6 +240,7 @@ export function createThreadComponent(options: ThreadComponentOptions = {}): Omo
         callerTurnId: () => (run.turn === 0 ? undefined : `turn-${run.turn}`),
         callerName: () => pi.getSessionName?.(),
         callerCause: () => run.cause,
+        callerChainHop: () => run.chainHop,
         callerRunDeliveries: () => [...run.consumed],
         callerRunHasLocalInput: () => run.local,
         onCompletionArmed: (durableId, armSeq) => completions.arm(durableId, armSeq),
@@ -339,6 +346,7 @@ export function createThreadComponent(options: ThreadComponentOptions = {}): Omo
         run.consumed = []
         run.local = false
         run.answered = true
+        run.chainHop = 0
         if (durableId === undefined) return
         // A failed write is reported (and retried) by the tracker's onWriteFailed.
         await waitAtMost(completions.settled(durableId).then(() => undefined, () => undefined), COMPLETION_SETTLE_WAIT_MS)

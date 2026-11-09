@@ -21,6 +21,8 @@ export type OutboundDelivery = {
   /** As the caller wrote it; each transport validates it the way its receiver does (`^\d+$`). */
   readonly expected_turn_id?: string
   readonly idempotency_key: string
+  /** The chain hop the caller's run continues from a delivery admitted from another device (K8); 0 when none. */
+  readonly inbound_hop?: number
   /** The call's parsed arguments, hashed by a transport that keeps its own receipt. */
   readonly args: unknown
 }

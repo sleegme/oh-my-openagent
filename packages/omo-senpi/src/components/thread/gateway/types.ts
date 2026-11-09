@@ -122,6 +122,8 @@ export type EnqueueRequest = {
   readonly sender_node: string
   readonly sender_turn: string | null
   readonly cause_delivery_id: string | null
+  /** The chain hop the sender's run continues from a delivery admitted from another device (its engine-stamped `chain_count`); never read from text. */
+  readonly inbound_hop?: number
   readonly claimed_root_id: string | null
   readonly origin: EnvelopeOrigin
   readonly actor: string
