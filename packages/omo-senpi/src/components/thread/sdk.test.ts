@@ -288,3 +288,16 @@ describe("thread SDK: takeover", () => {
     expect(await sdk.release(located.thread, {})).toMatchObject({ success: false, error: "host_unavailable" })
   })
 })
+
+describe("thread SDK: send reaches the account through the one pipeline (#12879 todo 8)", () => {
+  const remoteFixture = createRemoteThreadFixture()
+  afterEach(remoteFixture.cleanup)
+
+  test("#given a session on another device #when the command line sends to it #then it is refused as unsupported with sender_not_allowed and nothing reaches the device", async () => {
+    const account = remoteFixture.account()
+    const { sdk } = fixture({ remote: account.remote })
+    const sent = await sdk.send({ thread: "dur-on-b", text: "hello" })
+    expect(sent).toMatchObject({ kind: "error", error: { code: "unsupported", details: { device: "b", reason: "sender_not_allowed" } } })
+    expect(account.sent.filter((entry) => entry.rpc?.["type"] === "admit_external_message" || entry.rpc?.["type"] === "prompt")).toEqual([])
+  })
+})
