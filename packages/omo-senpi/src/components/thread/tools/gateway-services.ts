@@ -25,6 +25,8 @@ export type GatewayServices = {
   readonly engine: GatewayEngine
   /** The one send path: the engine behind the local transport, the device service behind the relay transport. */
   readonly pipeline: DeliveryPipeline
+  /** Stops a cross-device delivery's background retries (held behind the receiver's draft); the tools call it at shutdown. */
+  readonly disposeTransports: () => void
   readonly relay: GatewayRelay
   /** The calling session's workspace and project, as the engine stamps a delivery with them; a send to another device carries the same. */
   readonly senderProvenance: () => Promise<Provenance>
@@ -65,15 +67,14 @@ export function createGatewayServices(options: ThreadToolSurfaceOptions, view: (
     return entry === undefined || entry.liveness !== "routable" ? null : entry.endpoint
   }
   const relay = createGatewayRelay({ store, engine, endpoints, locate, now })
-  const pipeline = createDeliveryPipeline({
-    local: createLocalTransport(engine),
-    ...(options.remote === undefined ? {} : {
-      relay: createRelayTransport({
+  const relayTransport = options.remote === undefined ? undefined : createRelayTransport({
         remote: options.remote, store, now, senderProvenance,
         ...(options.callerCause === undefined ? {} : { callerCause: options.callerCause }),
         ...(options.callerName === undefined ? {} : { callerName: options.callerName }),
-      }),
-    }),
+        ...(options.callerChainHop === undefined ? {} : { callerChainHop: options.callerChainHop }),
+        ...(options.log === undefined ? {} : { log: options.log }),
+        ...(options.relayRetryDelayMs === undefined ? {} : { retryDelayMs: options.relayRetryDelayMs }),
   })
-  return { store, endpoints, engine, pipeline, relay, senderProvenance, locate }
+  const pipeline = createDeliveryPipeline({ local: createLocalTransport(engine), ...(relayTransport === undefined ? {} : { relay: relayTransport }) })
+  return { store, endpoints, engine, pipeline, relay, senderProvenance, locate, disposeTransports: () => relayTransport?.dispose() }
 }

@@ -64,7 +64,7 @@ export function createThreadTools(options: ThreadToolSurfaceOptions): readonly A
 }
 
 function buildThreadTools(options: ThreadToolSurfaceOptions): { readonly tools: readonly AnyTool[]; readonly dispose: () => void } {
-  const { store, relay, pipeline } = createGatewayServices(options, () => view({ offline: true }))
+  const { store, relay, pipeline, disposeTransports } = createGatewayServices(options, () => view({ offline: true }))
   const now = options.now ?? store.now
   async function view(request?: ThreadHostViewRequest): Promise<ThreadHostView> { await options.ensureHost?.(); return hostView(options, request) }
   // Receipts this process began but could not settle (the store gave up at its lock-wait bound):
@@ -312,6 +312,7 @@ function buildThreadTools(options: ThreadToolSurfaceOptions): { readonly tools: 
   const dispose = () => {
     unanswered.clear()
     relay.dispose()
+    disposeTransports()
   }
   return { tools: [create, list, read, send, interrupt, close, handoff, rename, setModel, setReasoning, ...relayTools], dispose }
 
